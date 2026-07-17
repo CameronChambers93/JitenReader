@@ -28,9 +28,18 @@ const DASH_PATTERNS: Record<UnderlineStyle, (thickness: number) => [number, numb
   dashed: (thickness) => [thickness * 3, thickness * 2],
 };
 
-function generateEffectCSS(effects: Effect[]): { normal: string[]; hover: string[] } {
+type EffectCSS = {
+  normal: string[];
+  hover: string[];
+  furiNormal: string[];
+  furiHover: string[];
+};
+
+function generateEffectCSS(effects: Effect[]): EffectCSS {
   const normal: string[] = [];
   const hover: string[] = [];
+  const furiNormal: string[] = [];
+  const furiHover: string[] = [];
   const shadows: string[] = [];
   let hasHoverTransitions = false;
 
@@ -111,6 +120,18 @@ function generateEffectCSS(effects: Effect[]): { normal: string[]; hover: string
         normal.push(`font-style: ${effect.value} !important;`);
 
         break;
+
+      case 'furigana':
+        // Hover reveal keeps the ruby space reserved to avoid layout shifts; a plain
+        // hide removes it entirely so the line collapses to normal text height
+        if (effect.hoverOnly) {
+          furiNormal.push('visibility: hidden !important;');
+          furiHover.push('visibility: visible !important;');
+        } else {
+          furiNormal.push('display: none !important;');
+        }
+
+        break;
     }
   }
 
@@ -132,7 +153,30 @@ function generateEffectCSS(effects: Effect[]): { normal: string[]; hover: string
     normal.push(`transition: ${transitions.join(', ')} !important;`);
   }
 
-  return { normal, hover };
+  return { normal, hover, furiNormal, furiHover };
+}
+
+function emitRule(lines: string[], selector: string, declarations: string[]): void {
+  if (!declarations.length) {
+    return;
+  }
+
+  lines.push(`${selector} {`);
+
+  for (const decl of declarations) {
+    lines.push(`  ${decl}`);
+  }
+
+  lines.push('}');
+}
+
+function emitStateCSS(lines: string[], state: string, effects: Effect[]): void {
+  const { normal, hover, furiNormal, furiHover } = generateEffectCSS(effects);
+
+  emitRule(lines, `.jiten-word.${state}`, normal);
+  emitRule(lines, `.jiten-word.${state}:hover`, hover);
+  emitRule(lines, `.jiten-word.${state} rt.jiten-furi`, furiNormal);
+  emitRule(lines, `.jiten-word.${state}:hover rt.jiten-furi`, furiHover);
 }
 
 export function generateWordStyleCSS(config: WordStyleConfig): string {
@@ -151,51 +195,11 @@ export function generateWordStyleCSS(config: WordStyleConfig): string {
       continue;
     }
 
-    const { normal, hover } = generateEffectCSS(stateStyle.effects);
-
-    if (normal.length) {
-      lines.push(`.jiten-word.${state} {`);
-
-      for (const decl of normal) {
-        lines.push(`  ${decl}`);
-      }
-
-      lines.push('}');
-    }
-
-    if (hover.length) {
-      lines.push(`.jiten-word.${state}:hover {`);
-
-      for (const decl of hover) {
-        lines.push(`  ${decl}`);
-      }
-
-      lines.push('}');
-    }
+    emitStateCSS(lines, state, stateStyle.effects);
   }
 
   if (iPlusOneStyle?.effects?.length) {
-    const { normal, hover } = generateEffectCSS(iPlusOneStyle.effects);
-
-    if (normal.length) {
-      lines.push('.jiten-word.i-plus-one {');
-
-      for (const decl of normal) {
-        lines.push(`  ${decl}`);
-      }
-
-      lines.push('}');
-    }
-
-    if (hover.length) {
-      lines.push('.jiten-word.i-plus-one:hover {');
-
-      for (const decl of hover) {
-        lines.push(`  ${decl}`);
-      }
-
-      lines.push('}');
-    }
+    emitStateCSS(lines, 'i-plus-one', iPlusOneStyle.effects);
   }
 
   return lines.join('\n');
